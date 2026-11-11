@@ -1,4 +1,7 @@
+
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -8,6 +11,7 @@
         android:allowBackup="false"
         android:label="直播秒杀助手"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -18,8 +22,22 @@
         </activity>
 
         <service
+            android:name=".JdPurchaseAssistService"
+            android:label="京东抢购辅助"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/jd_accessibility_service" />
+        </service>
+
+        <service
             android:name=".ScreenMonitorService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
+
     </application>
 </manifest>
