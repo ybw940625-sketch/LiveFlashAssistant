@@ -1,4 +1,3 @@
-
 package com.example.liveflash
 
 import android.accessibilityservice.AccessibilityService
@@ -6,45 +5,61 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.os.Handler
 import android.os.Looper
-import java.time.LocalDateTime
+import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
-import java.util.concurrent.atomic.AtomicBoolean
+import java.time.ZonedDateTime
 
 class JdPurchaseAssistService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private val attempted = AtomicBoolean(false)
+    private val zone = ZoneId.of("Asia/Shanghai")
+    private var attemptedDate: LocalDate? = null
 
-    private val targetTime = LocalDateTime.of(2026, 11, 13, 10, 0)
-        .atZone(ZoneId.of("Asia/Shanghai"))
-        .toInstant()
-        .toEpochMilli()
+    private val dailyCheck = object : Runnable {
+        override fun run() {
+            inspectAndClick()
+            scheduleNextDay()
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
 
-        val delay = (targetTime - System.currentTimeMillis()).coerceAtLeast(0L)
+        // 如果今天已经过了10点，立即检查当前页面
+        inspectAndClick()
 
-        handler.postDelayed({
-            inspectAndClick()
-        }, delay)
+        // 安排下一次每天上午10点的检查
+        scheduleNextDay()
+    }
+
+    private fun scheduleNextDay() {
+        handler.removeCallbacks(dailyCheck)
+
+        val now = ZonedDateTime.now(zone)
+        var next = now.toLocalDate().atTime(10, 0).atZone(zone)
+
+        if (!next.isAfter(now)) {
+            next = next.plusDays(1)
+        }
+
+        val delay = java.time.Duration.between(now, next).toMillis()
+        handler.postDelayed(dailyCheck, delay)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (attempted.get()) return
-        if (System.currentTimeMillis() < targetTime) return
-
         if (event?.packageName?.toString() != "com.jingdong.app.mall") return
-
         inspectAndClick()
     }
 
     private fun inspectAndClick() {
-        if (attempted.get()) return
-        if (System.currentTimeMillis() < targetTime) return
+        val now = ZonedDateTime.now(zone)
+        val today = now.toLocalDate()
+
+        if (now.toLocalTime().isBefore(LocalTime.of(10, 0))) return
+        if (attemptedDate == today) return
 
         val root = rootInActiveWindow ?: return
-
         if (root.packageName?.toString() != "com.jingdong.app.mall") return
 
         val pageText = collectText(root).joinToString(" ")
@@ -62,7 +77,7 @@ class JdPurchaseAssistService : AccessibilityService() {
         )
 
         if (stopWords.any { pageText.contains(it) }) {
-            attempted.set(true)
+            attemptedDate = today
             return
         }
 
@@ -76,16 +91,17 @@ class JdPurchaseAssistService : AccessibilityService() {
 
         val target = findClickable(root, buttons)
 
-        if (target != null && attempted.compareAndSet(false, true)) {
-            target.performAction(
+        if (target != null) {
+            val success = target.performAction(
                 AccessibilityNodeInfo.ACTION_CLICK
             )
+            if (success) {
+                attemptedDate = today
+            }
         }
     }
 
-    private fun collectText(
-        node: AccessibilityNodeInfo
-    ): List<String> {
+    private fun collectText(node: AccessibilityNodeInfo): List<String> {
         val result = mutableListOf<String>()
 
         node.text?.toString()?.let { result.add(it) }
@@ -104,7 +120,6 @@ class JdPurchaseAssistService : AccessibilityService() {
         node: AccessibilityNodeInfo,
         labels: List<String>
     ): AccessibilityNodeInfo? {
-
         val text = node.text?.toString().orEmpty()
         val desc = node.contentDescription?.toString().orEmpty()
 
@@ -112,7 +127,6 @@ class JdPurchaseAssistService : AccessibilityService() {
             if (node.isClickable) return node
 
             var parent = node.parent
-
             while (parent != null) {
                 if (parent.isClickable) return parent
                 parent = parent.parent
@@ -122,15 +136,13 @@ class JdPurchaseAssistService : AccessibilityService() {
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             val found = findClickable(child, labels)
-
             if (found != null) return found
         }
 
         return null
     }
 
-    override fun onInterrupt() {
-    }
+    override fun onInterrupt() {}
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
